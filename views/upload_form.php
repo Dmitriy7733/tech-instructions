@@ -1,5 +1,9 @@
 <?php
-session_start();
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+include 'includes/header.php';
 ?>
 
 <div class="container mt-5">
@@ -7,11 +11,11 @@ session_start();
     <?php
     // Отображение сообщений об ошибках и успехах
     if (isset($_SESSION['error'])) {
-        echo "<div style='color: red;'>" . $_SESSION['error'] . "</div>";
+        echo "<div id='error-message' style='color: red;'>" . $_SESSION['error'] . "</div>";
         unset($_SESSION['error']);
     }
     if (isset($_SESSION['success'])) {
-        echo "<div style='color: green;'>" . $_SESSION['success'] . "</div>";
+        echo "<div id='success-message' style='color: green;'>" . $_SESSION['success'] . "</div>";
         unset($_SESSION['success']);
     }
     ?>
@@ -43,13 +47,19 @@ session_start();
         <button type="submit" class="btn btn-success">Загрузить инструкцию</button>
     </form>
 </div>
-
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
+    $(document).ready(function() {
+    // Удаление сообщений через 10 секунд
+    setTimeout(function() {
+        $('#error-message').fadeOut(500);  // Скрываем сообщение об ошибке
+        $('#success-message').fadeOut(500); // Скрываем сообщение об успехе
+    }, 10000); // 10000 мс = 10 секунд
+});
 $(document).ready(function() {
     // Загрузка категорий
     $.ajax({
-        url: '/../app/users/get_categories.php',
+        url: 'app/users/get_categories.php',
         method: 'GET',
         dataType: 'json',
         success: function(data) {
@@ -66,42 +76,43 @@ $(document).ready(function() {
             });
         },
         error: function(xhr, status, error) {
-            console.error('Error fetching categories:', error);
+            console.error('Error fetching categories:', xhr.responseText); // Логируем ответ сервера
             alert('Ошибка при загрузке категорий');
         }
     });
+});
 
     // Получение подкатегорий при изменении категории
-    $('#categorySelect').change(function() {
-        var categoryId = $(this).val();
-        if (!categoryId) return; // Если не выбрана категория, выходим
+    $('#categorySelect').off('change').on('change', function() {
+    var categoryId = $(this).val();
+    if (!categoryId) return; // Если не выбрана категория, выходим
 
-        $.ajax({
-            url: '/../app/users/get_subcategories.php',
-            method: 'GET',
-            data: { category_id: categoryId },
-            dataType: 'json',
-            success: function(data) {
-                if (data.error) {
-                    console.error(data.error);
-                    alert(data.error);
-                    return;
-                }
-                var subcategorySelect = $('#subcategorySelect');
-                subcategorySelect.empty();
-                subcategorySelect.append($('<option>', { value: '', text: '-- Выберите подкатегорию --' }));
-                $.each(data, function(index, subcategory) {
-                    subcategorySelect.append($('<option>', { value: subcategory.id, text: subcategory.name }));
-                });
-            },
-            error: function(xhr, status, error) {
-                console.error('Error fetching subcategories:', error);
-                alert('Ошибка при загрузке подкатегорий');
+    $.ajax({
+        url: 'app/users/get_subcategories.php',
+        method: 'GET',
+        data: { category_id: categoryId },
+        dataType: 'json',
+        success: function(data) {
+            if (data.error) {
+                console.error(data.error);
+                alert(data.error);
+                return;
             }
-        });
+            var subcategorySelect = $('#subcategorySelect');
+            subcategorySelect.empty();
+            subcategorySelect.append($('<option>', { value: '', text: '-- Выберите подкатегорию --' }));
+            $.each(data, function(index, subcategory) {
+                subcategorySelect.append($('<option>', { value: subcategory.id, text: subcategory.name }));
+            });
+        },
+        error: function(xhr, status, error) {
+            console.error('Error fetching subcategories:', error);
+            alert('Ошибка при загрузке подкатегорий');
+        }
     });
 });
 </script>
-
-
+<?php
+include 'includes/footer.php';
+?>
 

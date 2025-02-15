@@ -1,32 +1,118 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-// Временно устанавливаем user_id для тестирования
-$_SESSION['user_id'] = 2;
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../assets/functions.php';
-require_once __DIR__ . '/../app/users/fetch_instructions.php';
-require_once __DIR__ . '/../app/users/get_instruction.php';
-require_once __DIR__ . '/../app/users/submit_complaint.php';
-$isRegistered = isset($_SESSION['registered']) ? $_SESSION['registered'] : false; // Проверка существования ключа
+//include 'config/db_init.php';  //для создания таблиц и первоначального заполнения,предварительно закоментить db.php
+include 'assets/functions.php';
+include 'app/users/fetch_instructions.php';
+include 'app/users/submit_complaint.php';
+include 'app/users/search_instructions.php';
+include 'includes/header.php';
+
+$userId = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
 ?>
 
-<div class="container mt-5">
+<div class="container">
+    <div class="container">
     <h1 class="text-center">Поиск инструкций для техники</h1>
 
     <!-- Форма поиска -->
-    <form class="mt-4">
+    <form class="mt-4" id="searchForm">
         <div class="input-group">
-            <input type="text" class="form-control" placeholder="Введите название прибора" aria-label="Название прибора" required>
+            <input type="text" id="searchInput" class="form-control" placeholder="Введите название прибора" aria-label="Название прибора" required>
             <div class="input-group-append">
                 <button class="btn btn-primary" type="submit">Поиск</button>
             </div>
         </div>
     </form>
+    <div class="table-responsive">
+        <h2>Результаты поиска</h2>
+        <table class="table table-bordered mt-3" id="searchResultsTable">
+        <thead>
+            <tr>
+                <th>Название</th>
+                <th>Описание</th>
+            </tr>
+        </thead>
+        <tbody id="searchResults">
+            <!-- Результаты поиска будут загружены здесь -->
+        </tbody>
+        </table>
+    </div>
+<script>
+let debounceTimer;
+const debounceDelay = 300; // 300ms задержка
 
-    <div class="mt-5">
-        <h2>Инструкции и руководства по эксплуатации техники</h2>
+document.getElementById('searchInput').addEventListener('input', function() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+        const searchTerm = this.value;
+        if (searchTerm.length > 2) { // Минимум 3 символа для поиска
+            searchInstructions(searchTerm);
+        } else {
+            document.getElementById('searchResults').innerHTML = '';
+        }
+    }, debounceDelay);
+});
+
+function searchInstructions(searchTerm) {
+    $.ajax({
+        url: 'app/users/search_instructions.php',
+        type: 'POST',
+        data: { search_term: searchTerm },
+        success: function(response) {
+            try {
+                let results = JSON.parse(response);
+                const searchResultsBody = $('#searchResults');
+                searchResultsBody.empty(); // Очищаем предыдущие результаты
+
+                if (results.error) {
+                    alert(results.error);
+                    return;
+                }
+
+                if (Array.isArray(results) && results.length > 0) {
+                    results.forEach(function(instruction) {
+                        searchResultsBody.append(`
+                            <tr>
+                                <td>
+                                    <a href="#" class="instruction-link" data-file="/uploads/${instruction.filename}" data-id="${instruction.id}">${instruction.title}</a>
+                                </td>
+                                <td>${instruction.description}</td>
+                            </tr>
+                        `);
+                    });
+                } else {
+                    searchResultsBody.append('<tr><td colspan="2" class="text-center">Нет результатов для данного запроса.</td></tr>');
+                }
+            } catch (e) {
+                console.error("JSON parse error: ", e);
+                alert('Ошибка обработки данных от сервера.');
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error("AJAX Error: ", status, error);
+            console.error("Response Text: ", xhr.responseText);
+            
+            let errorMsg = 'Произошла ошибка при выполнении поиска.';
+            try {
+                const jsonResponse = JSON.parse(xhr.responseText);
+                if (jsonResponse.error) {
+                    errorMsg = jsonResponse.error; // Используем ошибку из ответа сервера
+                }
+            } catch (e) {
+                // Если не удается разобрать JSON, используем стандартное сообщение
+            }
+            
+            alert(errorMsg);
+        }
+    });
+}
+</script>
+
+    <div>
+        <h2 class="text-center">Инструкции и руководства по эксплуатации техники</h2>
 
         <div class="list-group">
             <?php
@@ -59,7 +145,7 @@ $isRegistered = isset($_SESSION['registered']) ? $_SESSION['registered'] : false
                 // Проверяем, есть ли подкатегории
                 if (!empty($category['subcategories'])) {
                     foreach ($category['subcategories'] as $subcategory) {
-                        echo "<a class='dropdown-item' href='#' data-toggle='modal' data-subcategory-id='{$subcategory['id']}'>{$subcategory['name']}</a>";
+                        echo "<a class='dropdown-item' href='#' data-toggle='modal' data-target='#instructionsListModal' data-subcategory-id='{$subcategory['id']}'>{$subcategory['name']}</a>";
                     }
                 } else {
                     echo "<a class='dropdown-item disabled' href='#'>Нет подкатегорий</a>";
@@ -68,19 +154,21 @@ $isRegistered = isset($_SESSION['registered']) ? $_SESSION['registered'] : false
                 echo "</div></div>";
             }
             ?>
-        </div>
-        <ul class="list-group mt-3" id="instructionList">
-        <!-- Инструкции будут загружены через AJAX -->
-        </ul>
+    </div>
+    <!-- Раздел "О сайте" -->
+    <div id="about">
+        <h2>О сайте</h2>
+        <p>Наш сайт предоставляет доступ к инструкциям по эксплуатации различных видов техники и электроники. Мы стремимся помочь пользователям быстро находить необходимые документы для комфортного использования своей техники.</p>
     </div>
 </div>
+
 <!-- Модальное окно для отображения списка инструкций -->
 <div class="modal fade" id="instructionsListModal" tabindex="-1" aria-labelledby="instructionsListModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="instructionsListModalLabel">Инструкции к прибору</h5> <!-- Этот заголовок будет обновлен в JavaScript -->
-                <button type="button" class="btn btn-danger" class="close" data-dismiss="modal" aria-label="Закрыть">
+                <h5 class="modal-title" id="instructionsListModalLabel">Инструкции к прибору</h5>
+                <button type="button" class="btn btn-danger" data-dismiss="modal" aria-label="Закрыть">
                     <span>&times;</span>
                 </button>
             </div>
@@ -100,19 +188,16 @@ $isRegistered = isset($_SESSION['registered']) ? $_SESSION['registered'] : false
         </div>
     </div>
 </div>
+
 <!-- Модальное окно для просмотра инструкций -->
 <div class="modal fade" id="instructionModal" tabindex="-1" aria-labelledby="instructionModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-fullscreen">
+    <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content" style="border: 2px solid #007bff; border-radius: 10px;">
             <div class="modal-header">
                 <h5 class="modal-title" id="instructionModalLabel">Инструкция к прибору</h5>
-                <div class="ml-auto d-flex">
-                    <button type="button" class="btn btn-secondary" id="minimizeButton">−</button>
-                    <button type="button" class="btn btn-secondary" id="fullscreenButton">⛶</button>
                     <button type="button" class="btn btn-danger" data-dismiss="modal" aria-label="Закрыть"> 
                         <span>&times;</span>
                     </button>
-                </div>
             </div>
             <div class="modal-body">
                 <div id="instructionContent">
@@ -120,7 +205,6 @@ $isRegistered = isset($_SESSION['registered']) ? $_SESSION['registered'] : false
                 </div>
                 <a href="#" class="btn btn-success" id="downloadButton">Скачать инструкцию</a>
                 <button class="btn btn-danger" id="complaintButton" onclick="openComplaintModal(currentInstructionId)">Пожаловаться</button>
-                <p id="registrationMessage" style="display: none;">Для отправки жалобы необходимо зарегистрироваться.</p>
             </div>
         </div>
     </div>
@@ -136,12 +220,13 @@ $isRegistered = isset($_SESSION['registered']) ? $_SESSION['registered'] : false
                 </button>
             </div>
             <div class="modal-body">
-                <form id="complaintForm">
+                <form id="complaintForm" method="POST" action="app/users/submit_complaint.php">
                     <div class="form-group">
                         <label for="complaintText">Укажите суть жалобы</label>
                         <textarea class="form-control" id="complaintText" rows="4" required></textarea>
                     </div>
-                    <input type="hidden" id="complaintInstructionId" name="complaintInstructionId" value="">
+                    <input type="hidden" id="complaintInstructionId" name="instruction_id" value="">
+                    <input type="hidden" id="userId" name="user_id" value="<?php echo $_SESSION['user_id'] ?? ''; ?>">
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Закрыть</button>
                         <button type="submit" class="btn btn-danger">Отправить жалобу</button>
@@ -152,63 +237,38 @@ $isRegistered = isset($_SESSION['registered']) ? $_SESSION['registered'] : false
     </div>
 </div>
 
-<!-- Раздел "О сайте" -->
-<div class="mt-5" id="about">
-    <h2>О сайте</h2>
-    <p>Наш сайт предоставляет доступ к инструкциям по эксплуатации различных видов техники и электроники. Мы стремимся помочь пользователям быстро находить необходимые документы для комфортного использования своей техники.</p>
-</div>
-<!-- Подключение jQuery позже удалить, при удалении почему-то подключение в футере не работает-->
+
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
 <script>
     var currentFileUrl = ''; // Переменная для хранения URL текущего файла
     var openInstructionModals = 0; // Переменная для отслеживания количества открытых модальных окон для инструкций
-    var currentInstructionId; // Переменная для хранения ID инструкции
-    var isFullscreen = false; // Состояние модального окна
-    var isRegistered = true; // Установите в true для тестирования
+    //var isRegistered = true; // Установка в true для тестирования
 
-    // Обработчик для клика на кнопку "Развернуть"
-$(document).on('click', '#fullscreenButton', function() {
-    var element = document.getElementById("instructionModal");
-    if (element.requestFullscreen) {
-        element.requestFullscreen();
-    } else if (element.mozRequestFullScreen) { // Firefox
-        element.mozRequestFullScreen();
-    } else if (element.webkitRequestFullscreen) { // Chrome, Safari and Opera
-        element.webkitRequestFullscreen();
-    } else if (element.msRequestFullscreen) { // IE/Edge
-        element.msRequestFullscreen();
-    }
-    $(this).hide(); // Скрываем кнопку развертывания
-    $('#minimizeButton').show(); // Показываем кнопку сворачивания
-});
-
-// Обработчик для выхода из полноэкранного режима
-$(document).on('click', '#minimizeButton', function() {
-    if (document.fullscreenElement) {
-        document.exitFullscreen();
-    }
-    $(this).hide(); // Скрываем кнопку сворачивания
-    $('#fullscreenButton').show(); // Показываем кнопку развертывания
-});
-
-// Отправляем AJAX-запрос для получения инструкций по выбранной подкатегории
 $(document).on('click', '.dropdown-item', function(e) {
     e.preventDefault();
     var subcategoryId = $(this).data('subcategory-id');
+    if (!subcategoryId) {
+        alert("ID подкатегории не указан.");
+        return; // Если ID не указан, выходим из функции
+    }
     var subcategoryName = $(this).text(); // Получаем название подкатегории
 
-    $.ajax({
-        url: '/../app/users/fetch_instructions.php',
-        type: 'POST',
-        data: {subcategory_id: subcategoryId},
-        success: function(response) {
-            var instructions = JSON.parse(response);
-            var instructionListModal = $('#instructionListModal');
-            instructionListModal.empty(); // Очищаем предыдущий список
-            // Устанавливаем заголовок модального окна
-            $('#instructionsListModalLabel').text('Инструкции к ' + subcategoryName);
-            if (instructions.length > 0) {
+// Отправляем AJAX-запрос для получения инструкций по выбранной подкатегории
+$.ajax({
+    url: 'app/users/fetch_instructions.php',
+    type: 'POST',
+    data: {subcategory_id: subcategoryId},
+    dataType: 'json',
+    success: function(response) {
+        var instructionListModal = $('#instructionListModal');
+        instructionListModal.empty();
+        $('#instructionsListModalLabel').text('Инструкции к ' + subcategoryName);
+
+        if (response.success) {
+            var instructions = response.instructions;
+
+            if (instructions && instructions.length > 0) {
                 instructions.forEach(function(instruction) {
                     instructionListModal.append(`
                         <tr>
@@ -220,40 +280,31 @@ $(document).on('click', '.dropdown-item', function(e) {
             } else {
                 instructionListModal.append('<tr><td colspan="2">Нет доступных инструкций для этой подкатегории.</td></tr>');
             }
-            // Показываем модальное окно со списком инструкций
-            $('#instructionsListModal').modal('show');
-        },
-        error: function() {
-            alert('Произошла ошибка при загрузке инструкций.');
+        } else {
+            instructionListModal.append(`<tr><td colspan="2">${response.message}</td></tr>`);
         }
+
+        $('#instructionsListModal').modal('show');
+    },
+    error: function() {
+        alert('Произошла ошибка при загрузке инструкций.');
+    }
     });
 });
 
 // Обработчик для клика на ссылки в списке инструкций
-//var currentInstructionId; // Переменная для хранения ID инструкции
+var currentInstructionId; // Переменная для хранения ID инструкции
 $(document).on('click', '.instruction-link', function(e) {
     e.preventDefault();
     console.log("Instruction link clicked."); // Лог для проверки
     currentFileUrl = $(this).data('file').replace('http://', 'https://');
     currentInstructionId = $(this).data('id'); // Получаем ID инструкции
-    console.log("Current Instruction ID: ", currentInstructionId); // Лог для проверки
-    $('#instructionModal').modal('show');
-    $('#instructionContent').html(`<iframe id="instructionIframe" src="${currentFileUrl}" width="100%" height="400px" style="border:none;"></iframe>`);
-    
-    // Устанавливаем значение instructionId в скрытое поле формы жалобы
-    $('#complaintInstructionId').val(currentInstructionId);
-});
-
-
-/*$(document).on('click', '.instruction-link', function(e) {
-    e.preventDefault();
-    currentFileUrl = $(this).data('file').replace('http://', 'https://');
-    currentInstructionId = $(this).data('id'); // Получаем ID инструкции
-    console.log("Current Instruction ID: ", currentInstructionId); // Лог для проверки
     $('#instructionModal').modal('show');
     openInstructionModals++;
     $('#instructionContent').html(`<iframe id="instructionIframe" src="${currentFileUrl}" width="100%" height="400px" style="border:none;"></iframe>`);
-});*/
+    // Устанавливаем значение instructionId в скрытое поле формы жалобы
+    $('#complaintInstructionId').val(currentInstructionId);
+});
 
 // Обработчик для закрытия модального окна с инструкцией
 $('#instructionModal').on('hidden.bs.modal', function() {
@@ -286,19 +337,18 @@ $(document).on('click', '#downloadButton', function(e) {
         alert('Файл для скачивания недоступен.');
     }
 });
+//для жалоб
+function openComplaintModal(instructionId) {
+    $('#complaintInstructionId').val(instructionId);
+    $('#complaintModal').modal('show');
+}
 
-// Обработчик события отправки формы жалобы
 $(document).on('submit', '#complaintForm', function(e) {
-    e.preventDefault();
-    
+    e.preventDefault(); // Предотвращаем обычное поведение формы
     var complaintText = $('#complaintText').val();
     var instructionId = $('#complaintInstructionId').val();
-    console.log("Submitting complaint for Instruction ID: ", instructionId); // Лог для проверки
-    // Проверяем, зарегистрирован ли пользователь для отправки жалобы
-    /*if (!isRegistered) {
-        $('#registrationMessage').show();
-        return;
-    }*/
+    var userId = $('#userId').val();
+    console.log("Submitting complaint for Instruction ID: ", instructionId);
 
     // Проверяем корректность ID инструкции
     if (!instructionId || instructionId === "0") {
@@ -307,19 +357,27 @@ $(document).on('submit', '#complaintForm', function(e) {
     }
 
     $.ajax({
-        url: '/../app/users/submit_complaint.php',
+        url: 'app/users/submit_complaint.php',
         type: 'POST',
         data: {
             instruction_id: instructionId,
-            complaint_text: complaintText
+            complaint_text: complaintText,
+            user_id: userId
         },
         success: function(response) {
-            var result = JSON.parse(response);
+            let result;
+            try {
+                result = JSON.parse(response);
+            } catch (e) {
+                console.error('JSON Parse Error: ', e);
+                alert('Ошибка обработки ответа сервера. Убедитесь, что сервер возвращает корректный JSON.');
+                return;
+            }
             if (result.success) {
                 alert('Жалоба успешно отправлена!');
                 $('#complaintModal').modal('hide');
             } else {
-                alert(result.message);
+                alert(result.message || 'Произошла ошибка при отправке жалобы.');
             }
         },
         error: function(xhr, status, error) {
@@ -328,72 +386,8 @@ $(document).on('submit', '#complaintForm', function(e) {
         }
     });
 });
-
-/*$(document).on('submit', '#complaintForm', function(e) {
-    e.preventDefault();
-    
-    // Получаем данные из формы
-    var complaintText = $('#complaintText').val();
-    var instructionId = $('#complaintInstructionId').val();
-    var userId = <?php echo json_encode($_SESSION['user_id']); ?>; // Получаем user_id из PHP
-
-    console.log("Submitting complaint for Instruction ID: ", instructionId); // Лог для проверки
-
-    // Проверяем корректность ID инструкции и наличие текста жалобы
-    if (!instructionId || instructionId === "0") {
-        alert("ID инструкции не найден. Пожалуйста, попробуйте снова.");
-        return;
-    }
-    if (!complaintText.trim()) {
-        alert("Пожалуйста, укажите текст жалобы.");
-        return;
-    }
-
-    // Отправляем AJAX-запрос для отправки жалобы
-    $.ajax({
-        url: '/../app/users/submit_complaint.php',
-        type: 'POST',
-        data: {
-            instruction_id: instructionId,
-            complaint_text: complaintText,
-            user_id: userId // Передаем user_id
-        },
-        success: function(response) {
-            var result = JSON.parse(response);
-            if (result.success) {
-                alert('Жалоба успешно отправлена!');
-                $('#complaintModal').modal('hide');
-            } else {
-                alert(result.message);
-            }
-        },
-        error: function(xhr, status, error) {
-            console.error('AJAX Error: ', xhr.responseText);
-            alert('Произошла ошибка: ' + error);
-        }
-    });
-});*/
-function openInstructionModal(instructionId) {
-    currentInstructionId = instructionId; // Устанавливаем ID инструкции
-    $('#complaintInstructionId').val(currentInstructionId); // Устанавливаем ID в скрытое поле
-    $('#instructionIframe').attr('src', '/path/to/instruction/' + instructionId); // Устанавливаем источник для iframe
-    $('#instructionModal').modal('show'); // Открываем модальное окно с инструкцией
-}
-function openComplaintModal(instructionId) {
-    $('#complaintInstructionId').val(instructionId); // Устанавливаем ID инструкции в скрытое поле
-    $('#complaintModal').modal('show'); // Открываем модальное окно для жалобы
-}
-// Открытие модального окна для жалобы
-/*function openComplaintModal(instructionId) {
-    $('#complaintInstructionId').val(instructionId);
-    $('#complaintModal').modal('show');
-}
-
-$(document).on('click', '#complaintButton', function() {
-    if (currentInstructionId) {
-        openComplaintModal(currentInstructionId); // Вызов функции с текущим ID инструкции
-    } else {
-        alert("Текущий ID инструкции недоступен.");
-    }
-});*/
 </script>
+    <?php
+    include 'includes/footer.php';
+    ?>
+

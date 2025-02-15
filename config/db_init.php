@@ -1,6 +1,6 @@
 <?php
-require_once  "db.php";
-
+include 'db.php';
+//include $_SERVER['DOCUMENT_ROOT'] . '/config/db.php';
 try {
     // Создание таблицы пользователей
     getDb()->exec("CREATE TABLE IF NOT EXISTS users (
@@ -24,7 +24,7 @@ try {
     //создание таблицы инструкций
     getDb()->exec("CREATE TABLE IF NOT EXISTS instructions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
+        user_id INTEGER NULL,
         filename TEXT NOT NULL,
         category_id INTEGER NOT NULL,
         subcategory_id INTEGER,
@@ -34,7 +34,8 @@ try {
         approved INTEGER DEFAULT 0,
         FOREIGN KEY (category_id) REFERENCES categories(id),
         FOREIGN KEY (subcategory_id) REFERENCES categories(id), 
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     )");
     //Создание таблицы жалоб
     getDb()->exec("CREATE TABLE IF NOT EXISTS complaints (
@@ -91,13 +92,13 @@ try {
     $users = [
         [
             'username' => 'admin',
-            'password' => password_hash('123', PASSWORD_DEFAULT), // хэшируем пароль
+            'password' => password_hash('1234567', PASSWORD_DEFAULT), // хэшируем пароль
             'email' => 'admin@admins.com',
             'role' => 'admin'
         ],
         [
             'username' => 'user',
-            'password' => password_hash('123', PASSWORD_DEFAULT), // хэшируем пароль
+            'password' => password_hash('1111111', PASSWORD_DEFAULT), // хэшируем пароль
             'email' => 'user@users.com',
             'role' => 'user'
         ]
@@ -116,12 +117,4 @@ try {
     echo "Таблицы успешно заполнены данными.";
 } catch (PDOException $e) {
     echo "Ошибка при добавлении данных: " . $e->getMessage();
-}
-
-try {
-    // Установите все инструкции как одобренные
-    getDb()->exec("UPDATE instructions SET approved = 1");
-    echo "Все инструкции были успешно одобрены.";
-} catch (PDOException $e) {
-    echo "Ошибка при одобрении инструкций: " . $e->getMessage();
 }

@@ -1,16 +1,21 @@
 <?php
-//require_once "db.php";
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+require_once __DIR__ . '/../../config/db.php';
 
-try {
-    $db = getDb();
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id'])) {
-        $instructionId = intval($_POST['id']);
-        $stmt = $db->prepare("UPDATE instructions SET approved = 1 WHERE id = ?");
-        $stmt->execute([$instructionId]);
-        echo json_encode(['status' => 'success']);
+if (isset($_POST['id'])) {
+    $id = intval($_POST['id']);
+    
+    // Обновляем статус одобрения инструкции
+    $stmt = getDb()->prepare("UPDATE instructions SET approved = 1 WHERE id = :id");
+    $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+    
+    if ($stmt->execute()) {
+        echo json_encode(['success' => 'Instruction approved successfully.']);
     } else {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid request']);
+        echo json_encode(['error' => 'Failed to approve instruction.']);
     }
-} catch (PDOException $e) {
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+} else {
+    echo json_encode(['error' => 'Invalid request.']);
 }
